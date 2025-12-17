@@ -6,6 +6,7 @@
 #include <string>
 #include <fstream>
 #include <sstream>
+
 using namespace std;
 
 #define PI 3.14
@@ -25,7 +26,11 @@ using namespace std;
 #define GyroZ 12
 #define COLS 13 // number of columns in a racebox csv
  
-ifstream racebox("src/RaceBox25-10-2025_18-15.csv");
+// ifstream racebox("src/RaceBox25-10-2025_18-15.csv");
+// ifstream racebox("src/RaceBox25-10-2025_16-00.csv");
+// ifstream racebox("src/RaceBox25-10-2025_17-36.csv");
+// ifstream racebox("src/RaceBox19-10-2025_14-33.csv"); // two weird runs; not in the spreadsheet
+ifstream racebox("src/RaceBox19-10-2025_15-37.csv"); // 6 runs from the spreadsheet
 
 double degreesToRadians(double degrees) {
 	return degrees * PI / 180;
@@ -50,6 +55,77 @@ double distanceGeoM(double lat1, double lon1, double lat2, double lon2)
 	return earthRadiusKm * c * 1000;
 }
 
+long long parseIsoToMillis(const string& s) {
+	// Expected: 2025-10-25T17:36:21.320
+	if (s.size() < 19) throw runtime_error("ISO time too short: " + s);
+
+	auto to2 = [&](int pos) -> int {
+		return (s[pos] - '0') * 10 + (s[pos + 1] - '0');
+	};
+	auto to4 = [&](int pos) -> int {
+		return (s[pos] - '0') * 1000 + (s[pos + 1] - '0') * 100 + (s[pos + 2] - '0') * 10 + (s[pos + 3] - '0');
+	};
+
+	int Y = to4(0);
+	int M = to2(5);
+	int D = to2(8);
+	int h = to2(11);
+	int m = to2(14);
+	int sec = to2(17);
+
+	int ms = 0;
+	if (s.size() >= 23 && s[19] == '.') {
+		ms = (s[20] - '0') * 100 + (s[21] - '0') * 10 + (s[22] - '0');
+	}
+
+	// Convert date to a monotonically increasing day count (no timezone, no leap seconds drama).
+	// Howard Hinnant’s civil-from-days style math (compact version).
+	auto days_from_civil = [](int y, int mo, int d) -> long long {
+		y -= mo <= 2;
+		const int era = (y >= 0 ? y : y - 399) / 400;
+		const unsigned yoe = (unsigned)(y - era * 400);                  // [0, 399]
+		const unsigned doy = (153 * (mo + (mo > 2 ? -3 : 9)) + 2) / 5 + d - 1; // [0, 365]
+		const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;      // [0, 146096]
+		return (long long)era * 146097 + (long long)doe;
+	};
+
+	long long days = days_from_civil(Y, M, D);
+	long long total_ms = (((days * 24LL + h) * 60LL + m) * 60LL + sec) * 1000LL + ms;
+	return total_ms;
+}
+
+bool looksNumericSeconds(const string& s) {
+	// Accept digits, one dot, optional leading spaces and sign
+	bool seenDigit = false, seenDot = false;
+	size_t i = 0;
+	while (i < s.size() && std::isspace((unsigned char)s[i])) i++;
+	if (i < s.size() && (s[i] == '+' || s[i] == '-')) i++;
+
+	for (; i < s.size(); i++) {
+		char c = s[i];
+		if (std::isdigit((unsigned char)c)) { seenDigit = true; continue; }
+		if (c == '.' && !seenDot) { seenDot = true; continue; }
+		if (std::isspace((unsigned char)c)) continue;
+		return false;
+	}
+	return seenDigit;
+}
+
+double parseTimeSecondsSinceStart(const string& timeField) {
+	static bool haveT0 = false;
+	static long long t0_ms = 0;
+
+	if (looksNumericSeconds(timeField)) {
+		// Numeric mode: already seconds since start
+		return std::stod(timeField);
+	}
+
+	// ISO mode
+	long long ms = parseIsoToMillis(timeField);
+	if (!haveT0) { haveT0 = true; t0_ms = ms; }
+	return (ms - t0_ms) / 1000.0;
+}
+
 int main()
 {
 	string entry; // one line from racebox file
@@ -66,7 +142,7 @@ int main()
 		int col = 0;
 		while (getline(ss, field, ','))
 		{
-			if (col == Time) time = stod(field);
+			if (col == Time) time = time = parseTimeSecondsSinceStart(field);
 			if (col == Latitude) latitude = stod(field);
 			if (col == Longitude) longitude = stod(field);
 			if (col == Speed) speed = stoi(field);
@@ -79,7 +155,7 @@ int main()
 			long0 = longitude;
 			run = true;
 		}
-		if (run && (int)distanceGeoM(lat0, long0, latitude, longitude) == 75)
+		if (run && (int)distanceGeoM(lat0, long0, latitude, longitude) >= 75)
 		{
 			cout << time - time0 << endl;
 			run = false;
@@ -88,14 +164,3 @@ int main()
 		// cout << fixed << setprecision(10) << time << '\t' << latitude << '\n';
 	}
 }
-
-// Run program: Ctrl + F5 or Debug > Start Without Debugging menu
-// Debug program: F5 or Debug > Start Debugging menu
-
-// Tips for Getting Started: 
-//   1. Use the Solution Explorer window to add/manage files
-//   2. Use the Team Explorer window to connect to source control
-//   3. Use the Output window to see build output and other messages
-//   4. Use the Error List window to view errors
-//   5. Go to Project > Add New Item to create new code files, or Project > Add Existing Item to add existing code files to the project
-//   6. In the future, to open this project again, go to File > Open > Project and select the .sln file
