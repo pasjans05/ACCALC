@@ -1,15 +1,15 @@
 // ACCALC.cpp : This file contains the 'main' function. Program execution begins and ends there.
 //
-
 #include <iostream>
 #include <iomanip>
 #include <string>
 #include <fstream>
 #include <sstream>
+#include <cmath>
 
 using namespace std;
 
-#define PI 3.14
+#define PI acos(-1.0)
 // racebox csv column headers:
 #define Record 0
 #define Time 1
@@ -155,12 +155,11 @@ int main()
 			long0 = longitude;
 			run = true;
 		}
-		if (run && (int)distanceGeoM(lat0, long0, latitude, longitude) >= 75)
+		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= 75)
 		{
 			cout << time - time0 << endl;
 			run = false;
 		}
-			
 		// cout << fixed << setprecision(10) << time << '\t' << latitude << '\n';
 	}
 }
