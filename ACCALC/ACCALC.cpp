@@ -29,8 +29,11 @@ using namespace std;
 // ifstream racebox("src/RaceBox25-10-2025_18-15.csv");
 // ifstream racebox("src/RaceBox25-10-2025_16-00.csv");
 // ifstream racebox("src/RaceBox25-10-2025_17-36.csv");
+// ifstream racebox("src/RaceBox19-10-2025_17-21.csv"); // 3 runs rolling
+ifstream racebox("src/RaceBox19-10-2025_17-09.csv"); // 3 runs from spreadsheet
+// ifstream racebox("src/RaceBox19-10-2025_17-14.csv"); // 3 runs from spreadsheet no 2
 // ifstream racebox("src/RaceBox19-10-2025_14-33.csv"); // two weird runs; not in the spreadsheet
-ifstream racebox("src/RaceBox19-10-2025_15-37.csv"); // 6 runs from the spreadsheet
+// ifstream racebox("src/RaceBox19-10-2025_15-37.csv"); // 6 runs from the spreadsheet
 
 double degreesToRadians(double degrees) {
 	return degrees * PI / 180;
@@ -79,7 +82,7 @@ long long parseIsoToMillis(const string& s) {
 	}
 
 	// Convert date to a monotonically increasing day count (no timezone, no leap seconds drama).
-	// Howard Hinnant’s civil-from-days style math (compact version).
+	// Howard Hinnantï¿½s civil-from-days style math (compact version).
 	auto days_from_civil = [](int y, int mo, int d) -> long long {
 		y -= mo <= 2;
 		const int era = (y >= 0 ? y : y - 399) / 400;
@@ -129,7 +132,8 @@ double parseTimeSecondsSinceStart(const string& timeField) {
 int main()
 {
 	string entry; // one line from racebox file
-	double time = 0, latitude = 0, longitude = 0, time0 = 0, lat0 = 0, long0 = 0;
+	double time = 0, latitude = 0, longitude = 0, time0 = 0, lat0 = 0, long0 = 0, lat01 = 0, long01 = 0, prevlat = 0, prevlong = 0, distcalc = 0;
+	int lap, prevlap = 0;
 	int speed = 0;
 	bool run;
 	getline(racebox, entry);
@@ -146,8 +150,25 @@ int main()
 			if (col == Latitude) latitude = stod(field);
 			if (col == Longitude) longitude = stod(field);
 			if (col == Speed) speed = stoi(field);
+			if (col == Lap) lap = stoi(field);
 			col++;
 		}
+		if (lap != prevlap)
+		{
+			if (lap != 0)
+			{
+				lat01 = prevlat;
+				long01 = prevlong;
+			}
+			if (lap == 0 || (prevlap != 0 && lap > prevlap))
+				cout << distanceGeoM(latitude, longitude, lat01, long01) << endl;
+		}
+		else
+		{
+			prevlat = latitude;
+			prevlong = longitude;
+		}
+		prevlap = lap;
 		if (speed == 0)
 		{
 			time0 = time;
