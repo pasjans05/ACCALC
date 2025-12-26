@@ -25,6 +25,11 @@ using namespace std;
 #define GyroY 11
 #define GyroZ 12
 #define COLS 13 // number of columns in a racebox csv
+
+// Set to 1 to enable 30cm rollout before starting 75m measurement
+// Set to 0 to start measuring immediately from speed=0
+#define USE_ROLLOUT 1
+#define ROLLOUT_DISTANCE 0.3 // meters
  
 // ifstream racebox("src/RaceBox25-10-2025_18-15.csv");
 // ifstream racebox("src/RaceBox25-10-2025_16-00.csv");
@@ -82,7 +87,7 @@ long long parseIsoToMillis(const string& s) {
 	}
 
 	// Convert date to a monotonically increasing day count (no timezone, no leap seconds drama).
-	// Howard Hinnant�s civil-from-days style math (compact version).
+	// Howard Hinnant's civil-from-days style math (compact version).
 	auto days_from_civil = [](int y, int mo, int d) -> long long {
 		y -= mo <= 2;
 		const int era = (y >= 0 ? y : y - 399) / 400;
@@ -136,6 +141,13 @@ int main()
 	int lap, prevlap = 0;
 	int speed = 0;
 	bool run;
+	
+#if USE_ROLLOUT
+	// Rollout mode: track when we've traveled ROLLOUT_DISTANCE from speed=0
+	bool waitingForRollout = false;
+	double rolloutStartLat = 0, rolloutStartLong = 0;
+#endif
+	
 	getline(racebox, entry);
 	run = false;
 	while (getline(racebox, entry))
@@ -146,7 +158,7 @@ int main()
 		int col = 0;
 		while (getline(ss, field, ','))
 		{
-			if (col == Time) time = time = parseTimeSecondsSinceStart(field);
+			if (col == Time) time = parseTimeSecondsSinceStart(field);
 			if (col == Latitude) latitude = stod(field);
 			if (col == Longitude) longitude = stod(field);
 			if (col == Speed) speed = stoi(field);
@@ -161,7 +173,7 @@ int main()
 				long01 = prevlong;
 			}
 			if (lap == 0 || (prevlap != 0 && lap > prevlap))
-				cout << distanceGeoM(latitude, longitude, lat01, long01) << endl;
+				cout << "racebox gate distance: " << distanceGeoM(latitude, longitude, lat01, long01) << endl;
 		}
 		else
 		{
@@ -169,6 +181,38 @@ int main()
 			prevlong = longitude;
 		}
 		prevlap = lap;
+		
+#if USE_ROLLOUT
+		// With rollout: detect speed=0, wait for rollout distance, then start timing
+		if (speed == 0)
+		{
+			// Reset to new starting point
+			rolloutStartLat = latitude;
+			rolloutStartLong = longitude;
+			waitingForRollout = true;
+			run = false;
+		}
+		else if (waitingForRollout)
+		{
+			double rolloutDist = distanceGeoM(rolloutStartLat, rolloutStartLong, latitude, longitude);
+			if (rolloutDist >= ROLLOUT_DISTANCE)
+			{
+				// Rollout complete, start timing from here
+				time0 = time;
+				lat0 = latitude;
+				long0 = longitude;
+				run = true;
+				waitingForRollout = false;
+			}
+		}
+		
+		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= 75)
+		{
+			cout << "0-75m time (with " << ROLLOUT_DISTANCE << "m rollout): " << fixed << setprecision(3) << time - time0 << " s" << endl;
+			run = false;
+		}
+#else
+		// Without rollout: start timing immediately from speed=0
 		if (speed == 0)
 		{
 			time0 = time;
@@ -178,9 +222,11 @@ int main()
 		}
 		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= 75)
 		{
-			cout << time - time0 << endl;
+			cout << "0-75m time: " << fixed << setprecision(3) << time - time0 << " s" << endl;
 			run = false;
 		}
+#endif
+		
 		// cout << fixed << setprecision(10) << time << '\t' << latitude << '\n';
 	}
 }
