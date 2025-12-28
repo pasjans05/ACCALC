@@ -1,16 +1,17 @@
-// ACCALC.cpp : This file contains the 'main' function. Program execution begins and ends there.
-//
 #include <iostream>
 #include <iomanip>
 #include <string>
 #include <fstream>
 #include <sstream>
 #include <cmath>
-
 using namespace std;
-
+ 
+// ---- DEFINITIONS AND CONSTANTS ----
 #define PI acos(-1.0)
-// racebox csv column headers:
+#define DISTANCE 75 // meters acceleration distance (75 meters based on D 5.1.1 Formula Student Rules 2026)
+#define COLS 13 // number of columns in a racebox csv
+
+// ---- RACEBOX COLUMN HEADERS -----
 #define Record 0
 #define Time 1
 #define Latitude 2
@@ -24,26 +25,35 @@ using namespace std;
 #define GyroX 10
 #define GyroY 11
 #define GyroZ 12
-#define COLS 13 // number of columns in a racebox csv
 
-// Set to 1 to enable 30cm rollout before starting 75m measurement
+// ----- ROLLOUT SETTINGS -----
+// As per Formula Student 2026 handbook rule D 5.2.3 the vehicle is staged 0.3 m behind the start line
+// Set to 1 to enable [ROLLOUT_DISTANCE] m rollout before starting 75m measurement
 // Set to 0 to start measuring immediately from speed=0
 #define USE_ROLLOUT 1
 #define ROLLOUT_DISTANCE 0.3 // meters
- 
+
+// ----- IMPORT TEMPLATE -----
+// ifstream racebox("src/[your_file_name].csv");
+
+// ----- IMPORTS LIST - KEEP JUST ONE LINE UNCOMMENTED AT A TIME -----
 // ifstream racebox("src/RaceBox25-10-2025_18-15.csv");
 // ifstream racebox("src/RaceBox25-10-2025_16-00.csv");
 // ifstream racebox("src/RaceBox25-10-2025_17-36.csv");
 // ifstream racebox("src/RaceBox19-10-2025_17-21.csv"); // 3 runs rolling
-ifstream racebox("src/RaceBox19-10-2025_17-09.csv"); // 3 runs from spreadsheet
+// ifstream racebox("src/RaceBox19-10-2025_17-09.csv"); // 3 runs from spreadsheet
 // ifstream racebox("src/RaceBox19-10-2025_17-14.csv"); // 3 runs from spreadsheet no 2
 // ifstream racebox("src/RaceBox19-10-2025_14-33.csv"); // two weird runs; not in the spreadsheet
 // ifstream racebox("src/RaceBox19-10-2025_15-37.csv"); // 6 runs from the spreadsheet
+ifstream racebox("src/RaceBox19-10-2025_15-49.csv"); // 2 runs to be filled in the spreadsheet
+
+// ----- FUNCTIONS -----
 
 double degreesToRadians(double degrees) {
 	return degrees * PI / 180;
 }
 
+// calculate a straight line distance between two sets of geographic coordinated
 double distanceGeoM(double lat1, double lon1, double lat2, double lon2)
 {
 	double earthRadiusKm = 6371.0;
@@ -63,8 +73,9 @@ double distanceGeoM(double lat1, double lon1, double lat2, double lon2)
 	return earthRadiusKm * c * 1000;
 }
 
+// expected time format: YYYY-MM-DDTHH:MM:SS.000, returns time in miliseconds
 long long parseIsoToMillis(const string& s) {
-	// Expected: 2025-10-25T17:36:21.320
+	
 	if (s.size() < 19) throw runtime_error("ISO time too short: " + s);
 
 	auto to2 = [&](int pos) -> int {
@@ -106,26 +117,27 @@ bool looksNumericSeconds(const string& s) {
 	// Accept digits, one dot, optional leading spaces and sign
 	bool seenDigit = false, seenDot = false;
 	size_t i = 0;
-	while (i < s.size() && std::isspace((unsigned char)s[i])) i++;
+	while (i < s.size() && isspace((unsigned char)s[i])) i++;
 	if (i < s.size() && (s[i] == '+' || s[i] == '-')) i++;
 
 	for (; i < s.size(); i++) {
 		char c = s[i];
-		if (std::isdigit((unsigned char)c)) { seenDigit = true; continue; }
+		if (isdigit((unsigned char)c)) { seenDigit = true; continue; }
 		if (c == '.' && !seenDot) { seenDot = true; continue; }
-		if (std::isspace((unsigned char)c)) continue;
+		if (isspace((unsigned char)c)) continue;
 		return false;
 	}
 	return seenDigit;
 }
 
+// convert time as it occurs in racebox csv to seconds since session start format
 double parseTimeSecondsSinceStart(const string& timeField) {
 	static bool haveT0 = false;
 	static long long t0_ms = 0;
 
 	if (looksNumericSeconds(timeField)) {
 		// Numeric mode: already seconds since start
-		return std::stod(timeField);
+		return stod(timeField);
 	}
 
 	// ISO mode
@@ -133,6 +145,8 @@ double parseTimeSecondsSinceStart(const string& timeField) {
 	if (!haveT0) { haveT0 = true; t0_ms = ms; }
 	return (ms - t0_ms) / 1000.0;
 }
+
+// ----- MAIN -----
 
 int main()
 {
@@ -173,7 +187,10 @@ int main()
 				long01 = prevlong;
 			}
 			if (lap == 0 || (prevlap != 0 && lap > prevlap))
-				cout << "racebox gate distance: " << distanceGeoM(latitude, longitude, lat01, long01) << endl;
+			{
+				// if session has the colldown bits between each run and runs are numbered in their column, check the distance between your set gates with the line below
+				// cout << "racebox gate distance: " << distanceGeoM(latitude, longitude, lat01, long01) << endl;
+			}
 		}
 		else
 		{
@@ -206,7 +223,7 @@ int main()
 			}
 		}
 		
-		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= 75)
+		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= DISTANCE)
 		{
 			cout << "0-75m time (with " << ROLLOUT_DISTANCE << "m rollout): " << fixed << setprecision(3) << time - time0 << " s" << endl;
 			run = false;
@@ -220,7 +237,7 @@ int main()
 			long0 = longitude;
 			run = true;
 		}
-		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= 75)
+		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= DISTANCE)
 		{
 			cout << "0-75m time: " << fixed << setprecision(3) << time - time0 << " s" << endl;
 			run = false;
