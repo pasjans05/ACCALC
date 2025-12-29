@@ -38,14 +38,14 @@ using namespace std;
 
 // ----- IMPORTS LIST - KEEP JUST ONE LINE UNCOMMENTED AT A TIME -----
 // ifstream racebox("src/RaceBox25-10-2025_18-15.csv");
-// ifstream racebox("src/RaceBox25-10-2025_16-00.csv");
-// ifstream racebox("src/RaceBox25-10-2025_17-36.csv");
+// ifstream racebox("src/RaceBox25-10-2025_16-00.csv"); // 6 stand-start runs after a few rolling ones
+ifstream racebox("src/RaceBox25-10-2025_17-36.csv");
 // ifstream racebox("src/RaceBox19-10-2025_17-21.csv"); // 3 runs rolling
 // ifstream racebox("src/RaceBox19-10-2025_17-09.csv"); // 3 runs from spreadsheet
 // ifstream racebox("src/RaceBox19-10-2025_17-14.csv"); // 3 runs from spreadsheet no 2
 // ifstream racebox("src/RaceBox19-10-2025_14-33.csv"); // two weird runs; not in the spreadsheet
 // ifstream racebox("src/RaceBox19-10-2025_15-37.csv"); // 6 runs from the spreadsheet
-ifstream racebox("src/RaceBox19-10-2025_15-49.csv"); // 2 runs to be filled in the spreadsheet
+// ifstream racebox("src/RaceBox19-10-2025_15-49.csv"); // 2 runs to be filled in the spreadsheet
 
 // ----- FUNCTIONS -----
 
@@ -150,7 +150,7 @@ double parseTimeSecondsSinceStart(const string& timeField) {
 
 int main()
 {
-	string entry; // one line from racebox file
+	string entry, datetime, startDatetime; // one line from racebox file
 	double time = 0, latitude = 0, longitude = 0, time0 = 0, lat0 = 0, long0 = 0, lat01 = 0, long01 = 0, prevlat = 0, prevlong = 0, distcalc = 0;
 	int lap, prevlap = 0;
 	int speed = 0;
@@ -172,7 +172,11 @@ int main()
 		int col = 0;
 		while (getline(ss, field, ','))
 		{
-			if (col == Time) time = parseTimeSecondsSinceStart(field);
+			if (col == Time)
+			{
+				datetime = field;
+				time = parseTimeSecondsSinceStart(datetime);
+			}
 			if (col == Latitude) latitude = stod(field);
 			if (col == Longitude) longitude = stod(field);
 			if (col == Speed) speed = stoi(field);
@@ -216,6 +220,7 @@ int main()
 			{
 				// Rollout complete, start timing from here
 				time0 = time;
+				startDatetime = datetime;
 				lat0 = latitude;
 				long0 = longitude;
 				run = true;
@@ -225,7 +230,7 @@ int main()
 		
 		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= DISTANCE)
 		{
-			cout << "0-75m time (with " << ROLLOUT_DISTANCE << "m rollout): " << fixed << setprecision(3) << time - time0 << " s" << endl;
+			cout << startDatetime << " 0-75m time (with " << ROLLOUT_DISTANCE << "m rollout): " << fixed << setprecision(3) << time - time0 << " s" << endl;
 			run = false;
 		}
 #else
@@ -233,13 +238,14 @@ int main()
 		if (speed == 0)
 		{
 			time0 = time;
+			startDatetime = datetime;
 			lat0 = latitude;
 			long0 = longitude;
 			run = true;
 		}
 		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= DISTANCE)
 		{
-			cout << "0-75m time: " << fixed << setprecision(3) << time - time0 << " s" << endl;
+			cout << startDatetime << "0-75m time: " << fixed << setprecision(3) << time - time0 << " s" << endl;
 			run = false;
 		}
 #endif
