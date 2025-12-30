@@ -29,9 +29,16 @@ using namespace std;
 // ----- ROLLOUT SETTINGS -----
 // As per Formula Student 2026 handbook rule D 5.2.3 the vehicle is staged 0.3 m behind the start line
 // Set to 1 to enable [ROLLOUT_DISTANCE] m rollout before starting 75m measurement
-// Set to 0 to start measuring immediately from speed=0
+// Set to 0 to start measuring immediately from speed=0 (or speed threshold for rolling start)
 #define USE_ROLLOUT 1
 #define ROLLOUT_DISTANCE 0.3 // meters
+
+// ----- ROLLING START SETTINGS -----
+// Set to 1 for rolling start mode (starts when speed exceeds threshold)
+// Set to 0 for standing start mode (starts when speed is 0)
+#define USE_ROLLING_START 0
+#define ROLLING_START_SPEED_THRESHOLD 25 // km/h - run starts when speed exceeds this value
+#define ROLLING_START_GFORCEX_THRESHOLD 0.2 // G - minimum longitudinal acceleration required to trigger start
 
 // ----- IMPORT TEMPLATE -----
 // ifstream racebox("src/[your_file_name].csv");
@@ -152,18 +159,24 @@ int main()
 {
 	string entry, datetime, startDatetime; // one line from racebox file
 	double time = 0, latitude = 0, longitude = 0, time0 = 0, lat0 = 0, long0 = 0, lat01 = 0, long01 = 0, prevlat = 0, prevlong = 0, distcalc = 0;
+	double gforceX = 0;
 	int lap, prevlap = 0;
-	int speed = 0;
-	bool run;
+	int speed = 0, prevspeed = 0;
+	bool run = false;
 	
 #if USE_ROLLOUT
-	// Rollout mode: track when we've traveled ROLLOUT_DISTANCE from speed=0
+	// Rollout mode: track when we've traveled ROLLOUT_DISTANCE from trigger point
 	bool waitingForRollout = false;
 	double rolloutStartLat = 0, rolloutStartLong = 0;
 #endif
+
+#if USE_ROLLING_START
+	// Rolling start: armed when below threshold, triggers when exceeding threshold
+	bool rollingStartArmed = false;
+#endif
 	
-	getline(racebox, entry);
-	run = false;
+	getline(racebox, entry); // skip header
+	
 	while (getline(racebox, entry))
 	{
 		string field;
@@ -180,6 +193,7 @@ int main()
 			if (col == Latitude) latitude = stod(field);
 			if (col == Longitude) longitude = stod(field);
 			if (col == Speed) speed = stoi(field);
+			if (col == GForceX) gforceX = stod(field);
 			if (col == Lap) lap = stoi(field);
 			col++;
 		}
@@ -202,7 +216,72 @@ int main()
 			prevlong = longitude;
 		}
 		prevlap = lap;
+
+#if USE_ROLLING_START
+		// Rolling start mode: arm when below threshold, trigger when exceeding threshold
+		if (speed <= ROLLING_START_SPEED_THRESHOLD && !run)
+		{
+			// Arm rolling start when speed is at or below threshold
+			rollingStartArmed = true;
+		}
 		
+		// Trigger when armed, speed exceeds threshold, and GForceX meets acceleration threshold
+		bool startTriggered = rollingStartArmed 
+			&& (prevspeed <= ROLLING_START_SPEED_THRESHOLD) 
+			&& (speed > ROLLING_START_SPEED_THRESHOLD)
+			&& (gforceX >= ROLLING_START_GFORCEX_THRESHOLD);
+		
+#if USE_ROLLOUT
+		if (startTriggered && !waitingForRollout && !run)
+		{
+			rolloutStartLat = latitude;
+			rolloutStartLong = longitude;
+			waitingForRollout = true;
+			rollingStartArmed = false;
+		}
+		else if (waitingForRollout)
+		{
+			double rolloutDist = distanceGeoM(rolloutStartLat, rolloutStartLong, latitude, longitude);
+			if (rolloutDist >= ROLLOUT_DISTANCE)
+			{
+				time0 = time;
+				startDatetime = datetime;
+				lat0 = latitude;
+				long0 = longitude;
+				run = true;
+				waitingForRollout = false;
+			}
+		}
+		
+		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= DISTANCE)
+		{
+			cout << startDatetime << " Rolling 0-" << DISTANCE << "m (>" << ROLLING_START_SPEED_THRESHOLD 
+			     << "km/h, " << ROLLOUT_DISTANCE << "m rollout): " 
+			     << fixed << setprecision(3) << time - time0 << " s" << endl;
+			run = false;
+		}
+#else
+		// Rolling start without rollout
+		if (startTriggered && !run)
+		{
+			time0 = time;
+			startDatetime = datetime;
+			lat0 = latitude;
+			long0 = longitude;
+			run = true;
+			rollingStartArmed = false;
+		}
+		
+		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= DISTANCE)
+		{
+			cout << startDatetime << " Rolling 0-" << DISTANCE << "m (>" << ROLLING_START_SPEED_THRESHOLD 
+			     << "km/h): " << fixed << setprecision(3) << time - time0 << " s" << endl;
+			run = false;
+		}
+#endif
+
+#else
+		// Standing start mode (original behavior)
 #if USE_ROLLOUT
 		// With rollout: detect speed=0, wait for rollout distance, then start timing
 		if (speed == 0)
@@ -230,7 +309,8 @@ int main()
 		
 		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= DISTANCE)
 		{
-			cout << startDatetime << " 0-75m time (with " << ROLLOUT_DISTANCE << "m rollout): " << fixed << setprecision(3) << time - time0 << " s" << endl;
+			cout << startDatetime << " Standing 0-" << DISTANCE << "m (" << ROLLOUT_DISTANCE 
+			     << "m rollout): " << fixed << setprecision(3) << time - time0 << " s" << endl;
 			run = false;
 		}
 #else
@@ -245,11 +325,14 @@ int main()
 		}
 		if (run && distanceGeoM(lat0, long0, latitude, longitude) >= DISTANCE)
 		{
-			cout << startDatetime << "0-75m time: " << fixed << setprecision(3) << time - time0 << " s" << endl;
+			cout << startDatetime << " Standing 0-" << DISTANCE << "m: " 
+			     << fixed << setprecision(3) << time - time0 << " s" << endl;
 			run = false;
 		}
 #endif
+#endif
 		
+		prevspeed = speed;
 		// cout << fixed << setprecision(10) << time << '\t' << latitude << '\n';
 	}
 }
